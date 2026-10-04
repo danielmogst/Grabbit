@@ -8,6 +8,7 @@ import {
   CloudArrowUp,
   DownloadSimple,
   FilmSlate,
+  GearSix,
   MusicNotes,
   Prohibit,
   SpinnerGap,
@@ -52,6 +53,14 @@ function StatusIcon({
   switch (status) {
     case "queued":
       return <Clock size={size} weight="bold" className={className} />;
+    case "preparing":
+      return (
+        <GearSix
+          size={size}
+          weight="bold"
+          className={`animate-spin motion-reduce:animate-none ${className}`}
+        />
+      );
     case "downloading":
       return <DownloadSimple size={size} weight="bold" className={className} />;
     case "processing":
@@ -119,6 +128,7 @@ export function Converter() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
 
   const quality = format === "mp4" ? mp4Quality : mp3Quality;
   const qualities = qualitiesFor(format);
@@ -175,6 +185,12 @@ export function Converter() {
       clearTimeout(timer);
       controller.abort();
     };
+  }, [job]);
+
+  useEffect(() => {
+    if (!job || isTerminal(job.status)) return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, [job]);
 
   async function startJob(event: React.FormEvent<HTMLFormElement>) {
@@ -240,6 +256,26 @@ export function Converter() {
 
   const expiresInHours = job?.expiresAt
     ? Math.max(1, Math.round((job.expiresAt - Date.now()) / 3_600_000))
+    : null;
+  const elapsedSec = job?.startedAt
+    ? Math.max(0, Math.floor((clock - job.startedAt) / 1000))
+    : undefined;
+  const elapsed = formatDuration(elapsedSec);
+  const indeterminate = Boolean(
+    job && !isTerminal(job.status) && job.progress < 5,
+  );
+  const hint = job
+    ? job.status === "preparing"
+      ? "First run only: installing the media tools in the worker. This can take a minute or two."
+      : job.status === "queued"
+        ? "Waiting for the worker to pick up the job."
+        : job.status === "downloading" && job.progress < 5
+          ? "Contacting YouTube and starting the transfer."
+          : job.status === "processing"
+            ? "Converting the audio. Long videos can spend a few minutes here."
+            : job.status === "uploading"
+              ? "Uploading the finished file."
+              : null
     : null;
 
   return (
@@ -390,9 +426,16 @@ export function Converter() {
                   </p>
                 </div>
               </div>
-              <span className="shrink-0 font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                {Math.round(job.progress)}%
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {indeterminate ? "..." : `${Math.round(job.progress)}%`}
+                </span>
+                {elapsed ? (
+                  <span className="font-mono text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">
+                    {elapsed}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             <div
@@ -401,13 +444,23 @@ export function Converter() {
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(job.progress)}
+              aria-busy={indeterminate}
               aria-label="Conversion progress"
             >
-              <div
-                className="h-full rounded-full bg-emerald-600 transition-[width] duration-500 ease-out motion-reduce:transition-none dark:bg-emerald-500"
-                style={{ width: `${job.progress}%` }}
-              />
+              {indeterminate ? (
+                <div className="indeterminate-bar h-full w-1/3 rounded-full bg-emerald-600 dark:bg-emerald-500" />
+              ) : (
+                <div
+                  className="h-full rounded-full bg-emerald-600 transition-[width] duration-500 ease-out motion-reduce:transition-none dark:bg-emerald-500"
+                  style={{ width: `${job.progress}%` }}
+                />
+              )}
             </div>
+            {hint ? (
+              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                {hint}
+              </p>
+            ) : null}
 
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <MetaItem

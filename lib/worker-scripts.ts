@@ -13,6 +13,14 @@ export const BOOTSTRAP_SH = String.raw`#!/usr/bin/env bash
 # Installs media tools inside the Vercel Sandbox. Written by the Grabbit app.
 set -uo pipefail
 
+SCRIPT_DIR=/vercel/sandbox/grabbit
+
+# Keep the app informed during the one-time tool install so the UI never
+# looks dead and stall detection knows the worker is alive.
+report() {
+  node "$SCRIPT_DIR/report.mjs" status preparing 0 >/dev/null 2>&1 || true
+}
+
 if [ -z "$YTDLP_VERSION" ]; then
   echo "YTDLP_VERSION is not set" >&2
   exit 3
@@ -24,10 +32,14 @@ else
   SUDO="sudo -n"
 fi
 
+report
+
 if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "installing ffmpeg"
   $SUDO apt-get update -qq
+  report
   $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg ca-certificates curl
+  report
 fi
 
 CURRENT=""
@@ -40,6 +52,7 @@ if [ "$CURRENT" != "$YTDLP_VERSION" ]; then
   curl -fsSL --retry 5 --retry-connrefused -o /tmp/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION/yt-dlp_linux"
   chmod +x /tmp/yt-dlp
   $SUDO mv /tmp/yt-dlp /usr/local/bin/yt-dlp
+  report
 fi
 
 ffmpeg -version 2>/dev/null | head -n 1

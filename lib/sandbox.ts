@@ -57,6 +57,8 @@ function mapProgress(
   switch (stage) {
     case "queued":
       return 0;
+    case "preparing":
+      return 2;
     case "downloading":
       return clamp((percent ?? 0) * 0.9, 0, 90);
     case "processing":
@@ -346,7 +348,7 @@ async function launchJob(
 
   const now = Date.now();
   job.attempts += 1;
-  job.status = "downloading";
+  job.status = "preparing";
   job.progress = 0;
   job.sandboxName = config.sandboxName;
   job.startedAt = job.startedAt ?? now;
@@ -549,6 +551,27 @@ export async function syncJobFromSandbox(job: Job): Promise<Job> {
   }
   const report = await readWorkerStatusFile(sandbox, job.id);
   if (!report) {
+    // No status yet: if the detached command already died, fail fast instead
+    // of leaving the user at 0% until the next cron pass.
+    if (job.cmdId) {
+      try {
+        const command = await sandbox.getCommand(job.cmdId);
+        if (
+          command.exitCode !== null &&
+          command.exitCode !== undefined &&
+          command.exitCode !== 0
+        ) {
+          const stderr = await command.stderr().catch(() => "");
+          await settleFailure(
+            job,
+            tailLines(stderr, 5) || "The worker process exited before finishing.",
+          );
+          return job;
+        }
+      } catch {
+        // Command lookup failed; the stall watchdog handles it.
+      }
+    }
     job.lastSyncedAt = Date.now();
     await writeJob(job);
     return job;

@@ -12,3 +12,23 @@ html {
 ::selection {
   background: color-mix(in srgb, #10b981 28%, transparent);
 }
+
+@keyframes grabbit-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.indeterminate-bar {
+  animation: grabbit-indeterminate 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate-bar {
+    width: 100%;
+    animation: none;
+  }
+}

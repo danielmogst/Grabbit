@@ -37,6 +37,7 @@ export function sanitizeFilename(input: string): string {
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   queued: "Queued",
+  preparing: "Preparing worker",
   downloading: "Downloading",
   processing: "Converting",
   uploading: "Uploading",
