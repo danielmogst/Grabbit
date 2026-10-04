@@ -27,7 +27,11 @@ import {
 import { validateYouTubeUrl } from "@/lib/youtube";
 
 const STORAGE_KEY = "grabbit:last-job-id";
+const ACCESS_CODE_KEY = "grabbit:access-code";
 const POLL_INTERVAL_MS = 2500;
+
+const INPUT_CLASS =
+  "h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 transition outline-none placeholder:text-zinc-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:border-emerald-500 dark:focus:ring-emerald-500/20";
 
 function iconTone(status: JobStatus): string {
   switch (status) {
@@ -117,9 +121,15 @@ function MetaItem({
   );
 }
 
-export function Converter() {
+export function Converter({
+  requiresAccessCode = false,
+}: {
+  requiresAccessCode?: boolean;
+}) {
   const prefersReduced = useReducedMotion();
   const [url, setUrl] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [format, setFormat] = useState<JobFormat>("mp4");
   const [mp4Quality, setMp4Quality] = useState(DEFAULT_QUALITY.mp4);
   const [mp3Quality, setMp3Quality] = useState(DEFAULT_QUALITY.mp3);
@@ -166,6 +176,11 @@ export function Converter() {
   }, []);
 
   useEffect(() => {
+    if (!requiresAccessCode) return;
+    setAccessCode(window.localStorage.getItem(ACCESS_CODE_KEY) ?? "");
+  }, [requiresAccessCode]);
+
+  useEffect(() => {
     if (!job || isTerminal(job.status)) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -196,25 +211,41 @@ export function Converter() {
   async function startJob(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError(null);
+    setCodeError(null);
     const validation = validateYouTubeUrl(url);
     if (!validation.ok) {
       setFieldError(validation.error);
       return;
     }
+    if (requiresAccessCode && !accessCode.trim()) {
+      setCodeError("Enter the access code to start a conversion.");
+      return;
+    }
     setFieldError(null);
     setSubmitting(true);
     try {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+      };
+      if (requiresAccessCode) headers["x-access-code"] = accessCode.trim();
       const response = await fetch("/api/jobs", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ url, format, quality }),
       });
       const data = (await response.json().catch(() => ({}))) as {
         job?: ClientJob;
         error?: string;
       };
+      if (response.status === 401) {
+        setCodeError(data.error || "That access code is not right.");
+        return;
+      }
       if (!response.ok || !data.job) {
         throw new Error(data.error || "Could not start the conversion.");
+      }
+      if (requiresAccessCode) {
+        window.localStorage.setItem(ACCESS_CODE_KEY, accessCode.trim());
       }
       window.localStorage.setItem(STORAGE_KEY, data.job.id);
       setJob(data.job);
@@ -304,7 +335,7 @@ export function Converter() {
             placeholder="https://www.youtube.com/watch?v=..."
             aria-invalid={fieldError ? true : undefined}
             aria-describedby={fieldError ? "video-url-error" : undefined}
-            className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 transition outline-none placeholder:text-zinc-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:border-emerald-500 dark:focus:ring-emerald-500/20"
+            className={INPUT_CLASS}
           />
           {fieldError ? (
             <p
@@ -315,6 +346,39 @@ export function Converter() {
             </p>
           ) : null}
         </div>
+
+        {requiresAccessCode ? (
+          <div className="mt-5 flex flex-col gap-2">
+            <label htmlFor="access-code" className="text-sm font-medium">
+              Access code
+            </label>
+            <input
+              id="access-code"
+              name="accessCode"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={accessCode}
+              onChange={(event) => {
+                setAccessCode(event.target.value);
+                if (codeError) setCodeError(null);
+              }}
+              disabled={formLocked}
+              placeholder="Shared code"
+              aria-invalid={codeError ? true : undefined}
+              aria-describedby={codeError ? "access-code-error" : undefined}
+              className={INPUT_CLASS}
+            />
+            {codeError ? (
+              <p
+                id="access-code-error"
+                className="text-sm text-red-600 dark:text-red-400"
+              >
+                {codeError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
           <fieldset disabled={formLocked}>

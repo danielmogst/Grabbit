@@ -103,6 +103,8 @@ Pro plan is recommended for unattended multi-hour jobs (see
 | `APP_BASE_URL` | No | Vercel production domain | Callback base URL. Set for tunnels or custom domains. |
 | `BLOB_ACCESS` | No | `public` | `public` or `private` Blob store access. |
 | `CRON_SECRET` | No | none | Protects `/api/cron/reconcile`. |
+| `APP_ACCESS_CODE` | No | none | When set, the form asks for this shared code before creating a job. |
+| `MAX_PENDING_JOBS` | No | `2` | Maximum jobs in flight (running plus waiting). Extra submissions get a busy response. |
 | `SANDBOX_NAME` | No | `grabbit-worker` | Worker sandbox name. |
 | `SANDBOX_TIMEOUT_MINUTES` | No | `1440` | Session timeout; falls back to 45 if the plan rejects it. |
 | `YTDLP_VERSION` | No | pinned release | `yt-dlp` version installed in the sandbox. |
@@ -152,8 +154,8 @@ Any external scheduler can call `/api/cron/reconcile` with
 
 - Single videos only; playlists, channels, and live streams are rejected.
 - Age-restricted and members-only videos fail without a signed-in session.
-- One conversion runs at a time, by design.
-- No accounts
+- One conversion runs at a time, by design, with a small pending cap.
+- No accounts. Set `APP_ACCESS_CODE` before sharing the URL so only people you give the code to can submit jobs.
 
 ## Scripts
 

@@ -1,4 +1,7 @@
 import { Converter } from "@/components/converter";
+import { config } from "@/lib/config";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
@@ -17,7 +20,7 @@ export default function Home() {
       </header>
 
       <div className="mt-8">
-        <Converter />
+        <Converter requiresAccessCode={config.accessCode.length > 0} />
       </div>
 
       <footer className="mt-auto pt-10 text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
