@@ -55,6 +55,23 @@ if [ "$CURRENT" != "$YTDLP_VERSION" ]; then
   report
 fi
 
+# YouTube cookies, when configured. base64 keeps the file intact through
+# environment variables; the decoded jar is written next to the scripts.
+COOKIES_FILE="$SCRIPT_DIR/cookies.txt"
+if [ -n "$YTDLP_COOKIES_BASE64" ]; then
+  echo "writing cookies"
+  printf '%s' "$YTDLP_COOKIES_BASE64" | base64 -d >"$COOKIES_FILE.tmp" 2>/dev/null || true
+  if [ ! -s "$COOKIES_FILE.tmp" ] || ! awk -F'\t' '/Cookie File/{found=1} NF>=6{found=1} END{exit !found}' "$COOKIES_FILE.tmp"; then
+    rm -f "$COOKIES_FILE.tmp"
+    echo "YTDLP_COOKIES_BASE64 did not decode to a Netscape cookies file" >&2
+    exit 4
+  fi
+  chmod 600 "$COOKIES_FILE.tmp"
+  mv "$COOKIES_FILE.tmp" "$COOKIES_FILE"
+else
+  rm -f "$COOKIES_FILE"
+fi
+
 ffmpeg -version 2>/dev/null | head -n 1
 yt-dlp --version
 `;
@@ -74,6 +91,7 @@ export function buildCurrentEnv(job: Job, appBaseUrl: string): string {
     `QUALITY=${quote(job.quality)}`,
     `MAX_DURATION_MINUTES=${quote(String(config.maxDurationMinutes))}`,
     `YTDLP_VERSION=${quote(config.ytdlpVersion)}`,
+    `YTDLP_COOKIES_BASE64=${quote(config.ytdlpCookies)}`,
     `JOB_DIR=${quote(SANDBOX_JOB_DIR)}`,
     "",
   ];
@@ -124,8 +142,18 @@ die() {
   exit 3
 }
 
+# Cookie jar for signed-in downloads. Written by bootstrap.sh from
+# YTDLP_COOKIES_BASE64; the path contains no spaces on purpose.
+COOKIES_FILE="$SCRIPT_DIR/cookies.txt"
+COOKIE_ARGS=""
+if [ -s "$COOKIES_FILE" ]; then
+  COOKIE_ARGS="--cookies $COOKIES_FILE"
+  log "using cookies from $COOKIES_FILE"
+fi
+
 run_ytdlp() {
   yt-dlp \
+    $COOKIE_ARGS \
     --no-playlist \
     --newline \
     --no-warnings \
@@ -181,7 +209,7 @@ log "starting job id=$JOB_ID format=$FORMAT quality=$QUALITY"
 node "$SCRIPT_DIR/report.mjs" status downloading 0 >>"$LOG" 2>&1
 
 # 1. Probe first: live or over-long videos fail fast, and the UI gets a title.
-if ! yt-dlp --no-playlist --skip-download --no-warnings --socket-timeout 30 --dump-single-json "$VIDEO_URL" >"$JOB_DIR/probe.json" 2>>"$LOG"; then
+if ! yt-dlp $COOKIE_ARGS --no-playlist --skip-download --no-warnings --socket-timeout 30 --dump-single-json "$VIDEO_URL" >"$JOB_DIR/probe.json" 2>>"$LOG"; then
   ERR="$(grep -E 'ERROR:' "$LOG" | tail -n 1 | sed 's/^.*ERROR: //' | cut -c1-300)"
   die "$ERR"
 fi

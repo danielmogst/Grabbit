@@ -17,6 +17,8 @@ export const config = {
   hobbySandboxTimeoutMs: 45 * 60_000,
   snapshotExpirationMs: intEnv("SNAPSHOT_TTL_DAYS", 7) * 86_400_000,
   ytdlpVersion: process.env.YTDLP_VERSION || "2026.08.19",
+  /** Base64-encoded Netscape cookies.txt passed to yt-dlp for signed-in sessions. */
+  ytdlpCookies: process.env.YTDLP_COOKIES_BASE64 ?? "",
   outputTtlMs: intEnv("OUTPUT_TTL_HOURS", 24) * 3_600_000,
   maxDurationMinutes: intEnv("MAX_DURATION_MINUTES", 720),
   maxAttempts: intEnv("MAX_ATTEMPTS", 3),

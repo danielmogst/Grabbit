@@ -94,6 +94,41 @@ Pro plan is recommended for unattended multi-hour jobs (see
 
    Or connect the repository to the Vercel project and push.
 
+## Signed-in downloads
+
+Datacenter IPs such as the Vercel Sandbox often trigger YouTube's
+"Sign in to confirm you're not a bot" check, and age-restricted or
+members-only videos always need a session. Give the worker cookies from a
+signed-in browser:
+
+1. **Export cookies.** Either use a "Get cookies.txt LOCALLY"-style browser
+   extension on `youtube.com`, or let yt-dlp write the jar:
+
+   ```bash
+   yt-dlp --cookies-from-browser chrome --cookies cookies.txt --skip-download \
+     "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   ```
+
+2. **Base64-encode it** into a single line:
+
+   ```bash
+   base64 -w0 cookies.txt        # GNU (Linux)
+   base64 cookies.txt | tr -d '\n'   # macOS/BSD
+   ```
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt"))
+   ```
+
+3. **Set `YTDLP_COOKIES_BASE64`** to that value in `.env.local` and in the
+   Vercel project. The worker writes it to `cookies.txt` and passes
+   `--cookies` to yt-dlp on the next job. Remove the variable to clear the
+   stored jar.
+
+Cookies expire. If the bot check returns, export fresh ones and update the
+variable. Use an account you are comfortable using for this; the jar grants
+access to that YouTube session.
+
 ## Environment variables
 
 | Variable | Required | Default | Purpose |
@@ -108,6 +143,7 @@ Pro plan is recommended for unattended multi-hour jobs (see
 | `SANDBOX_NAME` | No | `grabbit-worker` | Worker sandbox name. |
 | `SANDBOX_TIMEOUT_MINUTES` | No | `1440` | Session timeout; falls back to 45 if the plan rejects it. |
 | `YTDLP_VERSION` | No | pinned release | `yt-dlp` version installed in the sandbox. |
+| `YTDLP_COOKIES_BASE64` | No | none | Base64 `cookies.txt` for signed-in downloads (bot checks, age-restricted, members-only). |
 | `OUTPUT_TTL_HOURS` | No | `24` | Retention for finished files and job records. |
 | `MAX_DURATION_MINUTES` | No | `720` | Reject videos longer than this (`0` disables). |
 | `MAX_ATTEMPTS` | No | `3` | Attempts per job. |
@@ -153,7 +189,7 @@ Any external scheduler can call `/api/cron/reconcile` with
 ## Limitations
 
 - Single videos only; playlists, channels, and live streams are rejected.
-- Age-restricted and members-only videos fail without a signed-in session.
+- Age-restricted, members-only, and bot-checked videos need signed-in cookies (`YTDLP_COOKIES_BASE64`).
 - One conversion runs at a time, by design, with a small pending cap.
 - No accounts. Set `APP_ACCESS_CODE` before sharing the URL so only people you give the code to can submit jobs.
 

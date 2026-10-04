@@ -11,9 +11,14 @@ const RULES: ErrorRule[] = [
       "The worker could not authenticate with Vercel Sandbox. Link the project and pull environment variables, or check the deployment settings.",
   },
   {
+    test: /not a bot|--cookies-from-browser|cookies for the authentication/i,
+    message:
+      "YouTube asked the worker to sign in (bot check). Export fresh YouTube cookies into YTDLP_COOKIES_BASE64, then try again.",
+  },
+  {
     test: /Sign in to confirm your age|age-restricted|inappropriate for some users/i,
     message:
-      "This video is age-restricted, so YouTube will not serve it without a signed-in session.",
+      "This video is age-restricted. Set YTDLP_COOKIES_BASE64 with a signed-in account that can view it.",
   },
   {
     test: /Private video/i,
