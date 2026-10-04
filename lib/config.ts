@@ -21,6 +21,10 @@ export const config = {
   maxDurationMinutes: intEnv("MAX_DURATION_MINUTES", 720),
   maxAttempts: intEnv("MAX_ATTEMPTS", 3),
   maxOutputBytes: intEnv("MAX_OUTPUT_GB", 40) * 1_000_000_000,
+  /** If set, submitting a job requires this shared code. */
+  accessCode: process.env.APP_ACCESS_CODE ?? "",
+  /** Maximum jobs in flight, running plus waiting. */
+  maxPendingJobs: intEnv("MAX_PENDING_JOBS", 2),
   stallMs: intEnv("STALL_MINUTES", 10) * 60_000,
   syncMinIntervalMs: intEnv("SYNC_MIN_INTERVAL_SECONDS", 4) * 1000,
   sandboxIdleDeleteMs: intEnv("SANDBOX_IDLE_DELETE_HOURS", 24) * 3_600_000,

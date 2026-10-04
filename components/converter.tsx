@@ -8,6 +8,7 @@ import {
   CloudArrowUp,
   DownloadSimple,
   FilmSlate,
+  GearSix,
   MusicNotes,
   Prohibit,
   SpinnerGap,
@@ -26,7 +27,11 @@ import {
 import { validateYouTubeUrl } from "@/lib/youtube";
 
 const STORAGE_KEY = "grabbit:last-job-id";
+const ACCESS_CODE_KEY = "grabbit:access-code";
 const POLL_INTERVAL_MS = 2500;
+
+const INPUT_CLASS =
+  "h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 transition outline-none placeholder:text-zinc-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:border-emerald-500 dark:focus:ring-emerald-500/20";
 
 function iconTone(status: JobStatus): string {
   switch (status) {
@@ -52,6 +57,14 @@ function StatusIcon({
   switch (status) {
     case "queued":
       return <Clock size={size} weight="bold" className={className} />;
+    case "preparing":
+      return (
+        <GearSix
+          size={size}
+          weight="bold"
+          className={`animate-spin motion-reduce:animate-none ${className}`}
+        />
+      );
     case "downloading":
       return <DownloadSimple size={size} weight="bold" className={className} />;
     case "processing":
@@ -108,9 +121,15 @@ function MetaItem({
   );
 }
 
-export function Converter() {
+export function Converter({
+  requiresAccessCode = false,
+}: {
+  requiresAccessCode?: boolean;
+}) {
   const prefersReduced = useReducedMotion();
   const [url, setUrl] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [format, setFormat] = useState<JobFormat>("mp4");
   const [mp4Quality, setMp4Quality] = useState(DEFAULT_QUALITY.mp4);
   const [mp3Quality, setMp3Quality] = useState(DEFAULT_QUALITY.mp3);
@@ -119,6 +138,7 @@ export function Converter() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
 
   const quality = format === "mp4" ? mp4Quality : mp3Quality;
   const qualities = qualitiesFor(format);
@@ -156,6 +176,11 @@ export function Converter() {
   }, []);
 
   useEffect(() => {
+    if (!requiresAccessCode) return;
+    setAccessCode(window.localStorage.getItem(ACCESS_CODE_KEY) ?? "");
+  }, [requiresAccessCode]);
+
+  useEffect(() => {
     if (!job || isTerminal(job.status)) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -177,28 +202,50 @@ export function Converter() {
     };
   }, [job]);
 
+  useEffect(() => {
+    if (!job || isTerminal(job.status)) return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [job]);
+
   async function startJob(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError(null);
+    setCodeError(null);
     const validation = validateYouTubeUrl(url);
     if (!validation.ok) {
       setFieldError(validation.error);
       return;
     }
+    if (requiresAccessCode && !accessCode.trim()) {
+      setCodeError("Enter the access code to start a conversion.");
+      return;
+    }
     setFieldError(null);
     setSubmitting(true);
     try {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+      };
+      if (requiresAccessCode) headers["x-access-code"] = accessCode.trim();
       const response = await fetch("/api/jobs", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ url, format, quality }),
       });
       const data = (await response.json().catch(() => ({}))) as {
         job?: ClientJob;
         error?: string;
       };
+      if (response.status === 401) {
+        setCodeError(data.error || "That access code is not right.");
+        return;
+      }
       if (!response.ok || !data.job) {
         throw new Error(data.error || "Could not start the conversion.");
+      }
+      if (requiresAccessCode) {
+        window.localStorage.setItem(ACCESS_CODE_KEY, accessCode.trim());
       }
       window.localStorage.setItem(STORAGE_KEY, data.job.id);
       setJob(data.job);
@@ -241,6 +288,26 @@ export function Converter() {
   const expiresInHours = job?.expiresAt
     ? Math.max(1, Math.round((job.expiresAt - Date.now()) / 3_600_000))
     : null;
+  const elapsedSec = job?.startedAt
+    ? Math.max(0, Math.floor((clock - job.startedAt) / 1000))
+    : undefined;
+  const elapsed = formatDuration(elapsedSec);
+  const indeterminate = Boolean(
+    job && !isTerminal(job.status) && job.progress < 5,
+  );
+  const hint = job
+    ? job.status === "preparing"
+      ? "First run only: installing the media tools in the worker. This can take a minute or two."
+      : job.status === "queued"
+        ? "Waiting for the worker to pick up the job."
+        : job.status === "downloading" && job.progress < 5
+          ? "Contacting YouTube and starting the transfer."
+          : job.status === "processing"
+            ? "Converting the audio. Long videos can spend a few minutes here."
+            : job.status === "uploading"
+              ? "Uploading the finished file."
+              : null
+    : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -268,7 +335,7 @@ export function Converter() {
             placeholder="https://www.youtube.com/watch?v=..."
             aria-invalid={fieldError ? true : undefined}
             aria-describedby={fieldError ? "video-url-error" : undefined}
-            className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 transition outline-none placeholder:text-zinc-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:border-emerald-500 dark:focus:ring-emerald-500/20"
+            className={INPUT_CLASS}
           />
           {fieldError ? (
             <p
@@ -279,6 +346,39 @@ export function Converter() {
             </p>
           ) : null}
         </div>
+
+        {requiresAccessCode ? (
+          <div className="mt-5 flex flex-col gap-2">
+            <label htmlFor="access-code" className="text-sm font-medium">
+              Access code
+            </label>
+            <input
+              id="access-code"
+              name="accessCode"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={accessCode}
+              onChange={(event) => {
+                setAccessCode(event.target.value);
+                if (codeError) setCodeError(null);
+              }}
+              disabled={formLocked}
+              placeholder="Shared code"
+              aria-invalid={codeError ? true : undefined}
+              aria-describedby={codeError ? "access-code-error" : undefined}
+              className={INPUT_CLASS}
+            />
+            {codeError ? (
+              <p
+                id="access-code-error"
+                className="text-sm text-red-600 dark:text-red-400"
+              >
+                {codeError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
           <fieldset disabled={formLocked}>
@@ -390,9 +490,16 @@ export function Converter() {
                   </p>
                 </div>
               </div>
-              <span className="shrink-0 font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                {Math.round(job.progress)}%
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {indeterminate ? "..." : `${Math.round(job.progress)}%`}
+                </span>
+                {elapsed ? (
+                  <span className="font-mono text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">
+                    {elapsed}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             <div
@@ -401,13 +508,23 @@ export function Converter() {
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(job.progress)}
+              aria-busy={indeterminate}
               aria-label="Conversion progress"
             >
-              <div
-                className="h-full rounded-full bg-emerald-600 transition-[width] duration-500 ease-out motion-reduce:transition-none dark:bg-emerald-500"
-                style={{ width: `${job.progress}%` }}
-              />
+              {indeterminate ? (
+                <div className="indeterminate-bar h-full w-1/3 rounded-full bg-emerald-600 dark:bg-emerald-500" />
+              ) : (
+                <div
+                  className="h-full rounded-full bg-emerald-600 transition-[width] duration-500 ease-out motion-reduce:transition-none dark:bg-emerald-500"
+                  style={{ width: `${job.progress}%` }}
+                />
+              )}
             </div>
+            {hint ? (
+              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                {hint}
+              </p>
+            ) : null}
 
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <MetaItem

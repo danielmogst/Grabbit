@@ -38,5 +38,32 @@ export async function GET(
     }
   }
 
+  // A queued job whose retry delay has passed may need a nudge if callbacks
+  // are unavailable (for example during local development).
+  if (
+    job.status === "queued" &&
+    (!job.nextAttemptAt || job.nextAttemptAt <= Date.now())
+  ) {
+    after(async () => {
+      try {
+        await runTick();
+      } catch (error) {
+        console.error("Tick after queued poll failed", error);
+      }
+    });
+  }
+
+  // A job that has not reported progress for a long time may be stuck. Let
+  // the scheduler restart or fail it, even without a frequent cron.
+  if (!isTerminal(job.status) && Date.now() - job.updatedAt > config.stallMs) {
+    after(async () => {
+      try {
+        await runTick();
+      } catch (error) {
+        console.error("Tick after stale poll failed", error);
+      }
+    });
+  }
+
   return Response.json({ job: publicJob(job) });
 }

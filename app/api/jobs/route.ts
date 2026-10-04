@@ -1,9 +1,11 @@
 import { after } from "next/server";
+import { isValidAccessCode } from "@/lib/access";
 import { config, resolveAppBaseUrl } from "@/lib/config";
-import { newJobId, publicJob, writeJob } from "@/lib/jobs";
+import { listJobs, newJobId, publicJob, writeJob } from "@/lib/jobs";
 import { runTick } from "@/lib/sandbox";
 import {
   DEFAULT_QUALITY,
+  isActive,
   qualitiesFor,
   type Job,
   type JobFormat,
@@ -22,6 +24,13 @@ export async function POST(request: Request) {
           "The server is missing WORKER_CALLBACK_SECRET. Add it to the environment before starting jobs.",
       },
       { status: 503 },
+    );
+  }
+
+  if (!isValidAccessCode(request.headers.get("x-access-code"))) {
+    return Response.json(
+      { error: "That access code is not right." },
+      { status: 401 },
     );
   }
 
@@ -44,6 +53,26 @@ export async function POST(request: Request) {
   const quality = allowed.some((option) => option.value === body.quality)
     ? (body.quality as string)
     : DEFAULT_QUALITY[format];
+
+  let pending = 0;
+  try {
+    pending = (await listJobs()).filter((job) => isActive(job.status)).length;
+  } catch (error) {
+    console.error("Failed to count pending jobs", error);
+    return Response.json(
+      { error: "Could not check the queue. Try again in a moment." },
+      { status: 503 },
+    );
+  }
+  if (pending >= config.maxPendingJobs) {
+    return Response.json(
+      {
+        error:
+          "The worker is busy right now. Try again when the current job finishes.",
+      },
+      { status: 429, headers: { "retry-after": "120" } },
+    );
+  }
 
   const now = Date.now();
   const job: Job = {

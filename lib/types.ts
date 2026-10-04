@@ -2,6 +2,7 @@ export type JobFormat = "mp4" | "mp3";
 
 export type JobStatus =
   | "queued"
+  | "preparing"
   | "downloading"
   | "processing"
   | "uploading"
@@ -10,6 +11,7 @@ export type JobStatus =
   | "canceled";
 
 export type WorkerStage =
+  | "preparing"
   | "downloading"
   | "processing"
   | "uploading"
